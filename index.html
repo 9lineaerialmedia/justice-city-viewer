@@ -8,7 +8,7 @@
     import * as Cesium from "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js";
 
     // Put your Cesium ion token here
-    Cesium.Ion.defaultAccessToken = "PUT_YOUR_TOKEN_HERE";
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
 
     // Create the viewer
     const viewer = new Cesium.Viewer("cesium", {
@@ -17,7 +17,7 @@
     });
 
     // Load your 3D tileset from Cesium ion
-    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PUT_YOUR_ASSET_ID_HERE);
+    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(3691052);
     viewer.scene.primitives.add(tileset);
     await tileset.readyPromise;
 
