@@ -2,23 +2,82 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>OSM Baseline</title>
+  <title>Justice City Viewer</title>
+
   <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
-  <style>html,body,#cesium{height:100%;margin:0}</style>
+  <style>
+    html,body,#cesium{height:100%;margin:0}
+    body{background:#0b1a2b}
+    #msg{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.65);color:#fff;padding:8px 10px;border-radius:6px;display:none;font:14px system-ui,sans-serif}
+  </style>
   <script>window.CESIUM_BASE_URL="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";</script>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
 </head>
 <body>
   <div id="cesium"></div>
+  <div id="msg"></div>
+
   <script>
-    const viewer = new Cesium.Viewer("cesium", { baseLayerPicker:false });
+    // Ion token
+    Cesium.Ion.defaultAccessToken =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
+
+    // Viewer with World Terrain
+    const viewer = new Cesium.Viewer("cesium", {
+      terrainProvider: Cesium.createWorldTerrain(),
+      baseLayerPicker:false, timeline:false, animation:false, geocoder:false, sceneModePicker:true
+    });
+    viewer.scene.globe.depthTestAgainstTerrain = true;
+
+    // Subdued OSM so background is very plain
     viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(
+    const osm = viewer.imageryLayers.addImageryProvider(
       new Cesium.UrlTemplateImageryProvider({
         url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         credit:"© OpenStreetMap contributors"
       })
     );
+    osm.saturation = 0.0;  // grayscale
+    osm.alpha      = 0.55; // faint
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#e6ebf2");
+
+    // Fly to your site immediately
+    const SITE_LON = -87.8451909767;
+    const SITE_LAT =  41.7427949281;
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(SITE_LON, SITE_LAT, 450),
+      orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 }
+    });
+
+    // Load your tileset
+    const ASSET_ID = 3691052;
+    const showError = (e)=>{
+      const m=document.getElementById("msg");
+      m.textContent=(e&&(e.message||e.statusText))||"Couldn’t load dataset."; m.style.display="block";
+      console.error("Tileset load error:", e);
+    };
+
+    (async ()=>{
+      try{
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(ASSET_ID);
+        tileset.maximumScreenSpaceError = 2.0;
+        tileset.dynamicScreenSpaceError = true;
+        viewer.scene.primitives.add(tileset);
+        await tileset.readyPromise;
+        viewer.flyTo(tileset, {duration:1.2});
+
+        // Optional: tiny height nudge keys if you need millimeter-perfect sit
+        let h=0;
+        function setH(v){
+          h=v;
+          const c=tileset.boundingSphere.center, ct=Cesium.Cartographic.fromCartesian(c);
+          const s=Cesium.Cartesian3.fromRadians(ct.longitude, ct.latitude, 0.0);
+          const o=Cesium.Cartesian3.fromRadians(ct.longitude, ct.latitude, h);
+          tileset.modelMatrix = Cesium.Matrix4.fromTranslation(Cesium.Cartesian3.subtract(o,s,new Cesium.Cartesian3()));
+        }
+        window.addEventListener("keydown",(e)=>{ if(e.key===']')setH(h+1); if(e.key==='[')setH(h-1); if(e.key==='}')setH(h+10); if(e.key==='{')setH(h-10); });
+      }catch(e){ showError(e); }
+    })();
   </script>
 </body>
 </html>
