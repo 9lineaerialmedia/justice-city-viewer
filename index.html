@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Smoke Test</title>
+  <title>OSM Baseline</title>
   <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
   <style>html,body,#cesium{height:100%;margin:0}</style>
   <script>window.CESIUM_BASE_URL="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";</script>
@@ -11,8 +11,14 @@
 <body>
   <div id="cesium"></div>
   <script>
-    // No token, no terrain, no custom imagery — just the default globe.
-    const viewer = new Cesium.Viewer("cesium");
+    const viewer = new Cesium.Viewer("cesium", { baseLayerPicker:false });
+    viewer.imageryLayers.removeAll();
+    viewer.imageryLayers.addImageryProvider(
+      new Cesium.UrlTemplateImageryProvider({
+        url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        credit:"© OpenStreetMap contributors"
+      })
+    );
   </script>
 </body>
 </html>
