@@ -4,26 +4,17 @@
   <meta charset="utf-8" />
   <title>Justice City Viewer</title>
 
-  <!-- Cesium CSS -->
-  <link rel="stylesheet"
-        href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
-
+  <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
   <style>
     html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; }
     body { background:#0b1a2b; }
-    #msg {
-      position:absolute; top:10px; left:10px;
-      background:rgba(0,0,0,.65); color:#fff; padding:8px 10px;
-      font:14px system-ui, sans-serif; border-radius:6px; display:none;
+    #msg{
+      position:absolute; top:10px; left:10px; background:rgba(0,0,0,.65);
+      color:#fff; padding:8px 10px; font:14px system-ui,sans-serif; border-radius:6px; display:none;
     }
   </style>
 
-  <!-- Tell Cesium where to load its assets -->
-  <script>
-    window.CESIUM_BASE_URL = "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";
-  </script>
-
-  <!-- Cesium JS -->
+  <script>window.CESIUM_BASE_URL="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";</script>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
 </head>
 <body>
@@ -31,94 +22,66 @@
   <div id="msg"></div>
 
   <script>
-    // === 1) TOKEN ===
+    // --- Token ---
     Cesium.Ion.defaultAccessToken =
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
 
-    // === 2) VIEWER: terrain ON, imagery = single solid color (no tiles) ===
+    // --- Viewer: terrain on ---
     const viewer = new Cesium.Viewer("cesiumContainer", {
       terrainProvider: Cesium.createWorldTerrain(),
-      timeline: false,
-      animation: false,
-      geocoder: false,
-      baseLayerPicker: false,
-      sceneModePicker: true
+      timeline:false, animation:false, geocoder:false, baseLayerPicker:false, sceneModePicker:true
     });
-
-    // Remove any default imagery
-    viewer.imageryLayers.removeAll();
-
-    // Add a single-color imagery so the globe renders,
-    // but looks like a plain map background.
-    // This is a 1x1 PNG data URL (very light gray). Change color if you want.
-    const singleColorPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=";
-    viewer.imageryLayers.addImageryProvider(
-      new Cesium.SingleTileImageryProvider({
-        url: singleColorPng,
-        rectangle: Cesium.Rectangle.MAX_VALUE
-      })
-    );
-
-    // Set the globe base color (shows in places imagery doesn't)
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#dfe3ea");
     viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    // === 3) ALWAYS START AT YOUR SITE (even before tileset is ready) ===
+    // --- Subdued OSM imagery (keeps engine happy, looks plain) ---
+    viewer.imageryLayers.removeAll();
+    const osm = viewer.imageryLayers.addImageryProvider(
+      new Cesium.UrlTemplateImageryProvider({ url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        credit: "© OpenStreetMap contributors" })
+    );
+    // flatten/soften the map
+    osm.brightness = 0.85;
+    osm.contrast   = 0.85;
+    osm.saturation = 0.0;   // grayscale
+    osm.alpha      = 0.6;   // faint background
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#e6ebf2");
+
+    // --- Always start at your site (before tileset is ready) ---
     const SITE_LON = -87.8451909767;
     const SITE_LAT =  41.7427949281;
-    const START_HEIGHT_M = 450;
-
     viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(SITE_LON, SITE_LAT, START_HEIGHT_M),
-      orientation: {
-        heading: 0.0,
-        pitch: Cesium.Math.toRadians(-35),
-        roll: 0.0
-      }
+      destination: Cesium.Cartesian3.fromDegrees(SITE_LON, SITE_LAT, 450),
+      orientation: { heading:0, pitch: Cesium.Math.toRadians(-35), roll:0 }
     });
 
-    // === 4) LOAD YOUR TILESET ===
+    // --- Load your tileset ---
     const ASSET_ID = 3691052;
-
-    const showError = (e) => {
-      const m = document.getElementById("msg");
-      m.textContent = (e && (e.message || e.statusText)) || "Couldn’t load dataset.";
-      m.style.display = "block";
+    const showError = (e)=>{
+      const m=document.getElementById("msg");
+      m.textContent=(e&&(e.message||e.statusText))||"Couldn’t load dataset."; m.style.display="block";
       console.error("Tileset load error:", e);
     };
 
-    (async () => {
-      try {
+    (async ()=>{
+      try{
         const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(ASSET_ID);
         tileset.maximumScreenSpaceError = 2.0;
         tileset.dynamicScreenSpaceError = true;
         viewer.scene.primitives.add(tileset);
         await tileset.readyPromise;
+        viewer.flyTo(tileset, {duration:1.2});
 
-        viewer.flyTo(tileset, { duration: 1.2 });
-
-        // --- Optional tiny height nudge ---
-        let heightOffset = 0;
-        function setHeight(offsetMeters) {
-          heightOffset = offsetMeters;
-          const center = tileset.boundingSphere.center;
-          const carto = Cesium.Cartographic.fromCartesian(center);
-          const surface = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 0.0);
-          const offset = Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, heightOffset);
-          const translation = Cesium.Cartesian3.subtract(offset, surface, new Cesium.Cartesian3());
-          tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
+        // Optional: tiny height nudge keys
+        let h=0;
+        function setH(v){
+          h=v;
+          const c=tileset.boundingSphere.center, ct=Cesium.Cartographic.fromCartesian(c);
+          const s=Cesium.Cartesian3.fromRadians(ct.longitude, ct.latitude, 0.0);
+          const o=Cesium.Cartesian3.fromRadians(ct.longitude, ct.latitude, h);
+          tileset.modelMatrix = Cesium.Matrix4.fromTranslation(Cesium.Cartesian3.subtract(o,s,new Cesium.Cartesian3()));
         }
-        window.addEventListener("keydown", (e) => {
-          if (e.key === "]") setHeight(heightOffset + 1);
-          if (e.key === "[") setHeight(heightOffset - 1);
-          if (e.key === "}") setHeight(heightOffset + 10);
-          if (e.key === "{") setHeight(heightOffset - 10);
-        });
-        // setHeight(0);
-      } catch (e) {
-        showError(e);
-      }
+        window.addEventListener("keydown",(e)=>{ if(e.key===']')setH(h+1); if(e.key==='[')setH(h-1); if(e.key==='}')setH(h+10); if(e.key==='{')setH(h-10); });
+      }catch(e){ showError(e); }
     })();
   </script>
 </body>
