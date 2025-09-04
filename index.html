@@ -4,27 +4,34 @@
   <meta charset="utf-8" />
   <title>Justice City Viewer</title>
 
-  <!-- Cesium widget CSS (required or you get a white screen) -->
-  <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
+  <!-- Cesium CSS (required) -->
+  <link rel="stylesheet"
+        href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
 
   <style>
-    html, body, #cesium {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      background: #0b1a2b; /* fallback background */
-    }
+    html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; }
+    body { background:#0b1a2b; }
+    #msg { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.65); color:#fff; padding:8px 10px; font:14px system-ui, sans-serif; border-radius:6px; display:none; }
   </style>
 
-  <script type="module">
-    import * as Cesium from "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js";
+  <!-- Tell Cesium where to load its assets from -->
+  <script>
+    window.CESIUM_BASE_URL = "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";
+  </script>
 
-    // Put your Cesium Ion token here
-    Cesium.Ion.defaultAccessToken = "eyJhbGciOi...";
+  <!-- Non-module build (more robust on GitHub Pages) -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <div id="msg"></div>
 
-    // Create the viewer
-    const viewer = new Cesium.Viewer("cesium", {
+  <script>
+    // 1) Your Cesium ion token (keep the quotes)
+    Cesium.Ion.defaultAccessToken = "PUT_YOUR_TOKEN_HERE";
+
+    // 2) Create the viewer
+    const viewer = new Cesium.Viewer("cesiumContainer", {
       timeline: false,
       animation: false,
       geocoder: false,
@@ -32,16 +39,20 @@
       sceneModePicker: true
     });
 
-    // Load your 3D tileset from Cesium ion
-    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(3691052);
-    viewer.scene.primitives.add(tileset);
-    await tileset.readyPromise;
-
-    // Zoom to your dataset
-    viewer.zoomTo(tileset);
+    // 3) Load your 3D Tiles (number only, no quotes)
+    (async () => {
+      try {
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PUT_YOUR_ASSET_ID_HERE);
+        viewer.scene.primitives.add(tileset);
+        await tileset.readyPromise;
+        viewer.zoomTo(tileset);
+      } catch (err) {
+        console.error(err);
+        const m = document.getElementById("msg");
+        m.textContent = "Couldn’t load dataset. Check your Ion token and asset ID.";
+        m.style.display = "block";
+      }
+    })();
   </script>
-</head>
-<body>
-  <div id="cesium"></div>
 </body>
 </html>
