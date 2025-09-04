@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Justice City Viewer</title>
+
+  <!-- Cesium CSS -->
+  <link rel="stylesheet"
+        href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
+
+  <style>
+    html, body, #cesium { width:100%; height:100%; margin:0; padding:0; }
+    .msg { position:absolute; top:8px; left:8px; background:rgba(0,0,0,.65); color:#fff; padding:8px 10px; border-radius:6px; font:14px system-ui,sans-serif; }
+  </style>
+
+  <script>
+    // Point Cesium to its assets
+    window.CESIUM_BASE_URL = "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";
+  </script>
+
+  <!-- Cesium + Supabase -->
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"></script>
+</head>
+<body>
+  <div id="cesium"></div>
+  <div id="note" class="msg" style="display:none"></div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
+
+    // ==== CONFIG: fill these in ====
+    const CESIUM_ION_TOKEN = "REPLACE_ME_WITH_YOUR_ION_TOKEN";
+    const TILESET_ASSET_ID = 3691052; // your photogrammetry tileset
+    const SUPABASE_URL = "REPLACE_ME_WITH_YOUR_SUPABASE_URL";
+    const SUPABASE_ANON_KEY = "REPLACE_ME_WITH_YOUR_SUPABASE_ANON_KEY";
+    // ===============================
+
+    Cesium.Ion.defaultAccessToken = CESIUM_ION_TOKEN;
+
+    const viewer = new Cesium.Viewer("cesium", {
+      timeline: false,
+      animation: false,
+      geocoder: false,
+      baseLayerPicker: false,
+      sceneModePicker: true
+    });
+
+    // Add terrain so your mesh rests on ground (fixes "floating" look)
+    try {
+      viewer.terrainProvider = Cesium.createWorldTerrain();
+    } catch (_) {
+      // if network/token blocks terrain, we still show the globe
+      show("Terrain unavailable; showing flat globe.");
+    }
+
+    // A clean, light basemap (OSM vector)
+    try {
+      const layer = viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+          credit: "© OpenStreetMap contributors"
+        })
+      );
+      viewer.imageryLayers.raiseToTop(layer);
+    } catch (_) {}
+
+    // Load your 3D Tiles
+    (async () => {
+      try {
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(TILESET_ASSET_ID);
+        viewer.scene.primitives.add(tileset);
+        await tileset.readyPromise;
+        viewer.zoomTo(tileset);
+      } catch (err) {
+        show("Couldn’t load tileset. Check ion token & asset ID.");
+        console.error(err);
+      }
+    })();
+
+    // Supabase client
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Draw helpers
+    const drawFeature = (row) => {
+      const props = row.properties || {};
+      const color = Cesium.Color.fromCssColorString(props.color || "#ff0000").withAlpha(props.opacity ?? 0.4);
+      const width = props.width ?? 3;
+      const labelText = props.label ?? "";
+
+      // Expecting GeoJSON (lon/lat)
+      const g = row.geometry;
+      let ent;
+
+      if (row.type === "polygon" && g?.type === "Polygon") {
+        const coords = g.coordinates[0].map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat));
+        ent = viewer.entities.add({
+          polygon: new Cesium.PolygonGraphics({
+            hierarchy: coords,
+            material: color,
+            outline: true,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 1
+          }),
+          label: labelText ? {
+            text: labelText, pixelOffset: new Cesium.Cartesian2(0,-20), fillColor: Cesium.Color.WHITE
+          } : undefined
+        });
+      }
+
+      if (row.type === "polyline" && g?.type === "LineString") {
+        const coords = g.coordinates.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat));
+        ent = viewer.entities.add({
+          polyline: {
+            positions: coords,
+            width,
+            material: color
+          },
+          label: labelText ? { text: labelText, pixelOffset: new Cesium.Cartesian2(0,-20) } : undefined
+        });
+      }
+
+      if (row.type === "point" && g?.type === "Point") {
+        const [lon, lat] = g.coordinates;
+        ent = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(lon, lat),
+          point: { pixelSize: 10, color },
+          label: labelText ? { text: labelText, pixelOffset: new Cesium.Cartesian2(0,-20) } : undefined
+        });
+      }
+
+      return ent;
+    };
+
+    // Load all current annotations
+    let entityIndex = new Map(); // id -> entity
+    async function loadAll() {
+      const { data, error } = await supabase
+        .from("annotations")
+        .select("*")
+        .order("id", { ascending: true });
+      if (error) {
+        show("Couldn’t load annotations.");
+        console.error(error);
+        return;
+      }
+      // Clear and redraw
+      entityIndex.forEach(e => viewer.entities.remove(e));
+      entityIndex.clear();
+      data.forEach(row => {
+        const ent = drawFeature(row);
+        if (ent) entityIndex.set(row.id, ent);
+      });
+    }
+
+    // Subscribe to realtime changes (insert/update/delete)
+    supabase.channel("realtime:annotations")
+      .on("postgres_changes", { event: "*", schema: "public", table: "annotations" }, payload => {
+        const row = payload.new ?? payload.old;
+        // simple approach: reload everything
+        loadAll();
+      })
+      .subscribe();
+
+    loadAll();
+
+    function show(text) {
+      const n = document.getElementById("note");
+      n.textContent = text;
+      n.style.display = "block";
+    }
+  </script>
+</body>
+</html>
