@@ -10,15 +10,11 @@
 
   <style>
     html, body, #cesiumContainer { width:100%; height:100%; margin:0; padding:0; }
-    /* Page background (outside the globe) */
     body { background:#0b1a2b; }
-
-    /* On-screen message if something fails */
     #msg {
       position:absolute; top:10px; left:10px;
-      background:rgba(0,0,0,.65); color:#fff;
-      padding:8px 10px; font:14px system-ui, sans-serif;
-      border-radius:6px; display:none;
+      background:rgba(0,0,0,.65); color:#fff; padding:8px 10px;
+      font:14px system-ui, sans-serif; border-radius:6px; display:none;
     }
   </style>
 
@@ -35,40 +31,72 @@
   <div id="msg"></div>
 
   <script>
-    // 1) Your Cesium ion token (keep the quotes)
-    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
+    // === 1) TOKEN ===
+    Cesium.Ion.defaultAccessToken =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
 
-    // 2) Create the viewer with REAL terrain, no imagery
+    // === 2) VIEWER (terrain on, no imagery) ===
     const viewer = new Cesium.Viewer("cesiumContainer", {
-      terrainProvider: Cesium.createWorldTerrain(),   // <-- ground elevation
+      terrainProvider: Cesium.createWorldTerrain(),
       timeline: false,
       animation: false,
       geocoder: false,
-      baseLayerPicker: false,  // we’re controlling layers ourselves
+      baseLayerPicker: false,
       sceneModePicker: true
     });
 
-    // Remove ALL imagery for a clean, plain globe
+    // No imagery – clean look
     viewer.imageryLayers.removeAll();
-    // Set the land color you want (light neutral looks map-like without tiles)
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#dfe3ea"); // tweak to taste
-    // Keep the sky; if you want a flat background instead, uncomment the next two lines:
-    // viewer.scene.skyBox = new Cesium.SkyBox({ show: false });
-    // viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#dfe3ea");
+    // Make rendering behave nicely against terrain
+    viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    // 3) Load your 3D Tileset
+    // Optional: flatter look (uncomment to remove sky)
+    // viewer.scene.skyBox = undefined;
+    // viewer.scene.skyAtmosphere.show = false;
+    // viewer.scene.globe.showGroundAtmosphere = false;
+
+    // === 3) FALLBACK CAMERA (go straight to your site even before tileset is ready) ===
+    // From your screenshot: lon/lat near -87.84519, 41.74279
+    const SITE_LON = -87.8451909767;
+    const SITE_LAT =  41.7427949281;
+    const START_HEIGHT_M = 450; // adjust if you want a tighter/wider start
+
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(SITE_LON, SITE_LAT, START_HEIGHT_M),
+      orientation: {
+        heading: 0.0,
+        pitch: Cesium.Math.toRadians(-35),
+        roll: 0.0
+      }
+    });
+
+    // === 4) LOAD YOUR TILESET ===
+    const ASSET_ID = 3691052;
+
+    const showError = (e) => {
+      const m = document.getElementById("msg");
+      m.textContent = (e && (e.message || e.statusText)) || "Couldn’t load dataset.";
+      m.style.display = "block";
+      console.error("Tileset load error:", e);
+    };
+
     (async () => {
       try {
-        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(3691052);
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(ASSET_ID);
+        // Some quality knobs (optional)
+        tileset.maximumScreenSpaceError = 2.0;
+        tileset.dynamicScreenSpaceError = true;
+
         viewer.scene.primitives.add(tileset);
         await tileset.readyPromise;
 
-        // Fly to your data
-        viewer.zoomTo(tileset);
+        // Re-fly once tileset is ready (gives a nice focus)
+        viewer.flyTo(tileset, { duration: 1.2 });
 
-        // ---- Optional: tiny height nudge (useful if you want millimeter-perfect sit) ----
-        let heightOffset = 0; // meters
-        async function setHeight(offsetMeters) {
+        // --- Tiny height nudge helper (if needed) ---
+        let heightOffset = 0;
+        function setHeight(offsetMeters) {
           heightOffset = offsetMeters;
           const center = tileset.boundingSphere.center;
           const carto = Cesium.Cartographic.fromCartesian(center);
@@ -77,20 +105,16 @@
           const translation = Cesium.Cartesian3.subtract(offset, surface, new Cesium.Cartesian3());
           tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
         }
-        // Keyboard: [ down 1m, ] up 1m, { down 10m, } up 10m
+        // Keys: [ / ] = ±1m, { / } = ±10m
         window.addEventListener("keydown", (e) => {
           if (e.key === "]") setHeight(heightOffset + 1);
           if (e.key === "[") setHeight(heightOffset - 1);
           if (e.key === "}") setHeight(heightOffset + 10);
           if (e.key === "{") setHeight(heightOffset - 10);
         });
-        // Start with no offset; adjust if you see any tiny float
-        setHeight(0);
-      } catch (err) {
-        console.error(err);
-        const m = document.getElementById("msg");
-        m.textContent = (err && (err.message || err.statusText)) || "Couldn’t load dataset.";
-        m.style.display = "block";
+        // setHeight(0); // leave at 0 unless you want a small tweak
+      } catch (e) {
+        showError(e);
       }
     })();
   </script>
