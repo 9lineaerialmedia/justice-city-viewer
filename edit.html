@@ -1,0 +1,195 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Justice City Editor</title>
+  <link rel="stylesheet"
+        href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
+  <style>
+    html, body, #cesium { width:100%; height:100%; margin:0; padding:0; }
+    .ui {
+      position:absolute; top:10px; left:10px; background:#111c; color:#fff; padding:10px; border-radius:8px;
+      font:14px system-ui,sans-serif; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    }
+    .ui input[type="color"] { width:32px; height:28px; border:none; padding:0; }
+    .ui button { cursor:pointer; }
+  </style>
+  <script>window.CESIUM_BASE_URL="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";</script>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"></script>
+</head>
+<body>
+  <div id="cesium"></div>
+
+  <div class="ui">
+    <strong>Draw:</strong>
+    <button id="btn-point">Point</button>
+    <button id="btn-line">Line</button>
+    <button id="btn-poly">Polygon</button>
+    <span>|</span>
+    <label>Label <input id="label" placeholder="e.g., Construction"/></label>
+    <label>Color <input id="color" type="color" value="#ff0000"/></label>
+    <label>Opacity <input id="opacity" type="number" value="0.4" step="0.05" min="0" max="1" style="width:64px"/></label>
+    <label>Width <input id="width" type="number" value="3" step="1" min="1" style="width:50px"/></label>
+    <span>|</span>
+    <button id="btn-undo">Undo last vertex</button>
+    <button id="btn-cancel">Cancel</button>
+    <button id="btn-save">Save</button>
+    <span id="msg" style="margin-left:8px;"></span>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm";
+
+    // ==== CONFIG ====
+    const CESIUM_ION_TOKEN = "REPLACE_ME_WITH_YOUR_ION_TOKEN";
+    const TILESET_ASSET_ID = 3691052;
+    const SUPABASE_URL = "REPLACE_ME_WITH_YOUR_SUPABASE_URL";
+    const SUPABASE_ANON_KEY = "REPLACE_ME_WITH_YOUR_SUPABASE_ANON_KEY";
+    // ================
+
+    Cesium.Ion.defaultAccessToken = CESIUM_ION_TOKEN;
+    const viewer = new Cesium.Viewer("cesium", { timeline:false, animation:false });
+    try { viewer.terrainProvider = Cesium.createWorldTerrain(); } catch(_) {}
+
+    (async () => {
+      try {
+        const ts = await Cesium.Cesium3DTileset.fromIonAssetId(TILESET_ASSET_ID);
+        viewer.scene.primitives.add(ts);
+        await ts.readyPromise;
+        viewer.zoomTo(ts);
+      } catch (_) {}
+    })();
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- Draw state ---
+    let mode = null;                 // 'point' | 'line' | 'polygon'
+    let positions = [];              // Cartesian3s
+    let dynamicEntity = null;        // live preview
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    function setMessage(t) { document.getElementById("msg").textContent = t || ""; }
+
+    function resetDrawing() {
+      mode = null;
+      positions = [];
+      if (dynamicEntity) viewer.entities.remove(dynamicEntity);
+      dynamicEntity = null;
+      setMessage("");
+      handler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      handler.removeInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+      handler.removeInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+    }
+
+    function start(modeIn) {
+      resetDrawing();
+      mode = modeIn;
+      setMessage("Click to add points. Right-click to finish.");
+
+      handler.setInputAction((click) => {
+        const cart = viewer.scene.pickPosition(click.position) ??
+                     viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+        if (!cart) return;
+        positions.push(cart);
+        preview();
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+      handler.setInputAction(() => {
+        setMessage("Finishing… Click Save to commit.");
+        // stop adding points but keep the preview
+        handler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+      handler.setInputAction((movement) => {
+        if (!positions.length) return;
+        const cart = viewer.camera.pickEllipsoid(movement.endPosition, viewer.scene.globe.ellipsoid);
+        if (!cart) return;
+        const temp = positions.slice();
+        temp.push(cart);
+        preview(temp);
+      }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+    }
+
+    function preview(tempPositions) {
+      const p = tempPositions || positions;
+      const props = getProps();
+      const color = Cesium.Color.fromCssColorString(props.color).withAlpha(props.opacity);
+      if (dynamicEntity) viewer.entities.remove(dynamicEntity);
+
+      if (mode === "point" && p.length) {
+        dynamicEntity = viewer.entities.add({
+          position: p[p.length-1],
+          point: { pixelSize: 10, color }
+        });
+      }
+      if (mode === "line" && p.length >= 2) {
+        dynamicEntity = viewer.entities.add({
+          polyline: { positions: p, width: props.width, material: color }
+        });
+      }
+      if (mode === "polygon" && p.length >= 3) {
+        dynamicEntity = viewer.entities.add({
+          polygon: { hierarchy: p, material: color, outline: true, outlineColor: Cesium.Color.BLACK }
+        });
+      }
+    }
+
+    function getProps() {
+      return {
+        label: document.getElementById("label").value.trim(),
+        color: document.getElementById("color").value || "#ff0000",
+        opacity: Number(document.getElementById("opacity").value || 0.4),
+        width: Number(document.getElementById("width").value || 3)
+      };
+    }
+
+    async function save() {
+      if (!mode || !positions.length) return setMessage("Nothing to save.");
+      const cart2deg = (c) => {
+        const carto = Cesium.Cartographic.fromCartesian(c);
+        return [Cesium.Math.toDegrees(carto.longitude), Cesium.Math.toDegrees(carto.latitude)];
+      };
+
+      let geometry;
+      if (mode === "point") {
+        geometry = { type:"Point", coordinates: cart2deg(positions[positions.length-1]) };
+      } else if (mode === "line" && positions.length >= 2) {
+        geometry = { type:"LineString", coordinates: positions.map(cart2deg) };
+      } else if (mode === "polygon" && positions.length >= 3) {
+        const ring = positions.map(cart2deg);
+        ring.push(ring[0]); // close
+        geometry = { type:"Polygon", coordinates: [ring] };
+      } else {
+        return setMessage("Not enough points.");
+      }
+
+      const body = {
+        type: mode === "line" ? "polyline" : mode,
+        geometry,
+        properties: getProps()
+      };
+
+      const { error } = await supabase.from("annotations").insert(body);
+      if (error) {
+        console.error(error);
+        setMessage("Save failed.");
+      } else {
+        setMessage("Saved.");
+        resetDrawing();
+      }
+    }
+
+    // UI bindings
+    document.getElementById("btn-point").onclick = () => start("point");
+    document.getElementById("btn-line").onclick = () => start("line");
+    document.getElementById("btn-poly").onclick = () => start("polygon");
+    document.getElementById("btn-save").onclick = save;
+    document.getElementById("btn-cancel").onclick = resetDrawing;
+    document.getElementById("btn-undo").onclick = () => {
+      if (!positions.length) return;
+      positions.pop(); preview();
+    };
+  </script>
+</body>
+</html>
