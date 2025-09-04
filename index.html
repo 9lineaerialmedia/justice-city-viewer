@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Justice City Viewer</title>
+  <style>html,body,#cesium{width:100%;height:100%;margin:0;padding:0;}</style>
+  <script type="module">
+    import * as Cesium from "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js";
+
+    // Put your Cesium ion token here
+    Cesium.Ion.defaultAccessToken = "PUT_YOUR_TOKEN_HERE";
+
+    // Create the viewer
+    const viewer = new Cesium.Viewer("cesium", {
+      timeline: false,
+      animation: false
+    });
+
+    // Load your 3D tileset from Cesium ion
+    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PUT_YOUR_ASSET_ID_HERE);
+    viewer.scene.primitives.add(tileset);
+    await tileset.readyPromise;
+
+    // Zoom camera to your dataset
+    viewer.zoomTo(tileset);
+  </script>
+</head>
