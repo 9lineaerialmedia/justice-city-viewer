@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Justice City Viewer</title>
 
-  <!-- Cesium CSS (required) -->
+  <!-- Cesium CSS -->
   <link rel="stylesheet"
         href="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Widgets/widgets.css">
 
@@ -14,12 +14,12 @@
     #msg { position:absolute; top:10px; left:10px; background:rgba(0,0,0,.65); color:#fff; padding:8px 10px; font:14px system-ui, sans-serif; border-radius:6px; display:none; }
   </style>
 
-  <!-- Tell Cesium where to load its assets from -->
+  <!-- Tell Cesium where to load its assets -->
   <script>
     window.CESIUM_BASE_URL = "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/";
   </script>
 
-  <!-- Non-module build (more robust on GitHub Pages) -->
+  <!-- Cesium JS -->
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/Cesium.js"></script>
 </head>
 <body>
@@ -27,22 +27,31 @@
   <div id="msg"></div>
 
   <script>
-    // 1) Your Cesium ion token (keep the quotes)
-    Cesium.Ion.defaultAccessToken = "PUT_YOUR_TOKEN_HERE";
+    // 1) Your Cesium ion token
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
 
     // 2) Create the viewer
     const viewer = new Cesium.Viewer("cesiumContainer", {
       timeline: false,
       animation: false,
       geocoder: false,
-      baseLayerPicker: true,
+      baseLayerPicker: false,
       sceneModePicker: true
     });
 
-    // 3) Load your 3D Tiles (number only, no quotes)
+    // 3) Force OpenStreetMap imagery so the globe always shows
+    viewer.imageryLayers.removeAll();
+    viewer.imageryLayers.addImageryProvider(
+      new Cesium.UrlTemplateImageryProvider({
+        url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        credit: "© OpenStreetMap contributors"
+      })
+    );
+
+    // 4) Load your 3D Tileset
     (async () => {
       try {
-        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(PUT_YOUR_ASSET_ID_HERE);
+        const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(3691052);
         viewer.scene.primitives.add(tileset);
         await tileset.readyPromise;
         viewer.zoomTo(tileset);
