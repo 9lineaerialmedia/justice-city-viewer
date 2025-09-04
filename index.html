@@ -35,7 +35,7 @@
     Cesium.Ion.defaultAccessToken =
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMTJhNDRjOS0yMGQ0LTQ3MTctODI0OC00NjBmNTJhZDg2MTgiLCJpZCI6MzM2ODExLCJpYXQiOjE3NTcwMTMyMTR9.zRV7TVzrkTXHHEdqQFJMqqO33PoBHTLtbpy3unjefHc";
 
-    // === 2) VIEWER (terrain on, no imagery) ===
+    // === 2) VIEWER: terrain ON, imagery = single solid color (no tiles) ===
     const viewer = new Cesium.Viewer("cesiumContainer", {
       terrainProvider: Cesium.createWorldTerrain(),
       timeline: false,
@@ -45,22 +45,29 @@
       sceneModePicker: true
     });
 
-    // No imagery – clean look
+    // Remove any default imagery
     viewer.imageryLayers.removeAll();
+
+    // Add a single-color imagery so the globe renders,
+    // but looks like a plain map background.
+    // This is a 1x1 PNG data URL (very light gray). Change color if you want.
+    const singleColorPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=";
+    viewer.imageryLayers.addImageryProvider(
+      new Cesium.SingleTileImageryProvider({
+        url: singleColorPng,
+        rectangle: Cesium.Rectangle.MAX_VALUE
+      })
+    );
+
+    // Set the globe base color (shows in places imagery doesn't)
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#dfe3ea");
-    // Make rendering behave nicely against terrain
     viewer.scene.globe.depthTestAgainstTerrain = true;
 
-    // Optional: flatter look (uncomment to remove sky)
-    // viewer.scene.skyBox = undefined;
-    // viewer.scene.skyAtmosphere.show = false;
-    // viewer.scene.globe.showGroundAtmosphere = false;
-
-    // === 3) FALLBACK CAMERA (go straight to your site even before tileset is ready) ===
-    // From your screenshot: lon/lat near -87.84519, 41.74279
+    // === 3) ALWAYS START AT YOUR SITE (even before tileset is ready) ===
     const SITE_LON = -87.8451909767;
     const SITE_LAT =  41.7427949281;
-    const START_HEIGHT_M = 450; // adjust if you want a tighter/wider start
+    const START_HEIGHT_M = 450;
 
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(SITE_LON, SITE_LAT, START_HEIGHT_M),
@@ -84,17 +91,14 @@
     (async () => {
       try {
         const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(ASSET_ID);
-        // Some quality knobs (optional)
         tileset.maximumScreenSpaceError = 2.0;
         tileset.dynamicScreenSpaceError = true;
-
         viewer.scene.primitives.add(tileset);
         await tileset.readyPromise;
 
-        // Re-fly once tileset is ready (gives a nice focus)
         viewer.flyTo(tileset, { duration: 1.2 });
 
-        // --- Tiny height nudge helper (if needed) ---
+        // --- Optional tiny height nudge ---
         let heightOffset = 0;
         function setHeight(offsetMeters) {
           heightOffset = offsetMeters;
@@ -105,14 +109,13 @@
           const translation = Cesium.Cartesian3.subtract(offset, surface, new Cesium.Cartesian3());
           tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
         }
-        // Keys: [ / ] = ±1m, { / } = ±10m
         window.addEventListener("keydown", (e) => {
           if (e.key === "]") setHeight(heightOffset + 1);
           if (e.key === "[") setHeight(heightOffset - 1);
           if (e.key === "}") setHeight(heightOffset + 10);
           if (e.key === "{") setHeight(heightOffset - 10);
         });
-        // setHeight(0); // leave at 0 unless you want a small tweak
+        // setHeight(0);
       } catch (e) {
         showError(e);
       }
